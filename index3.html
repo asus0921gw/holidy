@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>休診日公告</title>
+  <style>
+    :root {
+      --primary-color: #2c3e50;
+      --secondary-color: #3498db;
+      --success-color: #27ae60;
+      --danger-color: #e74c3c;
+      --light-color: #ecf0f1;
+      --dark-color: #2c3e50;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f5f7fa;
+      color: var(--dark-color);
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+    h1 {
+      color: var(--primary-color);
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .last-updated {
+      text-align: center;
+      color: #7f8c8d;
+      font-size: 0.9em;
+      margin-bottom: 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+    }
+    th, td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    th {
+      background-color: var(--primary-color);
+      color: white;
+      font-weight: 600;
+    }
+    tr:nth-child(even) {
+      background-color: var(--light-color);
+    }
+    tr:hover {
+      background-color: #f1f1f1;
+    }
+    .no-data {
+      text-align: center;
+      padding: 20px;
+      color: #7f8c8d;
+      font-style: italic;
+    }
+    .status {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.8em;
+      font-weight: bold;
+    }
+    .status-valid {
+      background-color: rgba(39, 174, 96, 0.2);
+      color: var(--success-color);
+    }
+    .status-pending {
+      background-color: rgba(243, 156, 18, 0.2);
+      color: #f39c12;
+    }
+    .status-error {
+      background-color: rgba(231, 76, 60, 0.2);
+      color: var(--danger-color);
+    }
+    .footer {
+      text-align: center;
+      margin-top: 20px;
+      color: #7f8c8d;
+      font-size: 0.8em;
+    }
+    .loading {
+      text-align: center;
+      padding: 20px;
+      color: #7f8c8d;
+    }
+    .spinner {
+      border: 4px solid rgba(0, 0, 0, 0.1);
+      border-radius: 50%;
+      border-top: 4px solid var(--secondary-color);
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 10px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>休診日公告</h1>
+    <p class="last-updated">最後更新：<span id="last-updated">載入中...</span></p>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p>正在載入休診日資料...</p>
+    </div>
+
+    <table id="holiday-table">
+      <thead>
+        <tr>
+          <th>日期</th>
+          <th>類型</th>
+          <th>備註</th>
+        </tr>
+      </thead>
+      <tbody id="holiday-list">
+        <!-- 由 JavaScript 動態填入 -->
+      </tbody>
+    </table>
+
+    <div class="no-data" id="no-data" style="display: none;">
+      <p>未來一個月無休診日</p>
+    </div>
+
+    <div class="footer">
+      <p>資料來源：Google Sheets | 更新頻率：每 6 小時 | 如有疑問，請聯繫管理員</p>
+    </div>
+  </div>
+
+  <script>
+    // 1. 讀取 holidays.json（加上時間戳避開快取）
+    async function fetchHolidays() {
+      const timestamp = new Date().getTime();
+      try {
+        const response = await fetch(`holidays.json?t=${timestamp}`);
+        if (!response.ok) throw new Error('無法讀取資料');
+        return await response.json();
+      } catch (error) {
+        console.error('❌ 讀取資料失敗:', error);
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('holiday-list').innerHTML = `
+          <tr>
+            <td colspan="3" class="no-data">載入失敗，請稍後再試。</td>
+          </tr>
+        `;
+        return [];
+      }
+    }
+
+    // 2. 過濾未來一個月的休診日
+    function filterFutureHolidays(holidays) {
+      const now = new Date();
+      now.setHours(now.getHours() + 8); // 轉換到台灣時間 (UTC+8)
+      const oneMonthLater = new Date(now);
+      oneMonthLater.setMonth(oneMonthLater.getMonth() + 1);
+
+      return holidays.filter(holiday => {
+        const holidayDate = new Date(holiday.date);
+        return holidayDate >= now && holidayDate <= oneMonthLater;
+      });
+    }
+
+    // 3. 渲染表格
+    function renderHolidays(holidays) {
+      const tbody = document.getElementById('holiday-list');
+      const loading = document.getElementById('loading');
+      const noData = document.getElementById('no-data');
+
+      loading.style.display = 'none';
+
+      if (holidays.length === 0) {
+        noData.style.display = 'block';
+        return;
+      }
+
+      noData.style.display = 'none';
+      tbody.innerHTML = holidays.map(holiday => `
+        <tr>
+          <td>${holiday.date}</td>
+          <td>${holiday.type || '-'}</td>
+          <td>${holiday.note || '-'}</td>
+        </tr>
+      `).join('');
+
+      // 更新最後更新時間
+      const lastUpdated = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
+      document.getElementById('last-updated').textContent = lastUpdated;
+    }
+
+    // 4. 初始化
+    async function init() {
+      const holidays = await fetchHolidays();
+      const futureHolidays = filterFutureHolidays(holidays);
+      renderHolidays(futureHolidays);
+    }
+
+    // 5. 執行
+    init();
+  </script>
+</body>
+</html>
